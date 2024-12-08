@@ -9,7 +9,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: "0 8 * * *" # runs at 08:00 UTC every day
+    - cron: "0 0 * * *" # runs at 00:00 UTC every day
   workflow_dispatch:
     inputs:
       hub:
@@ -38,9 +38,56 @@ on:
         type: boolean
 
 jobs:
+  Docs:
+    # TODO: break this job out into it's own action with pull_request_target to allow changes to user forks
+    if: github.repository == 'ultralytics/ultralytics'
+    runs-on: macos-14
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref || github.ref }}
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+          cache: "pip" # caching pip dependencies
+      - name: Install Dependencies
+        run: pip install tqdm mkdocs-material "mkdocstrings[python]" mkdocs-jupyter mkdocs-redirects mkdocs-ultralytics-plugin
+      - name: Update Docs Reference Section
+        run: python docs/build_reference.py
+      - name: Commit and Push Reference Section Changes
+        run: |
+          git add .
+          git reset HEAD -- .github/workflows/  # workflow changes are not permitted with default token
+          git config --global user.name "UltralyticsAssistant"
+          git config --global user.email "web@ultralytics.com"
+          if ! git diff --staged --quiet; then
+            git commit -m "Auto-update Ultralytics Docs Reference Section by https://ultralytics.com/actions"
+            git push
+          else
+            echo "No changes to commit"
+          fi
+      - name: Build Docs and Check for Warnings
+        run: python docs/build_docs.py
+      - name: Commit and Push Docs changes
+        continue-on-error: true
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          git add --update  # only add updated files
+          git reset HEAD -- .github/workflows/  # workflow changes are not permitted with default token
+          if ! git diff --staged --quiet; then
+            git commit -m "Auto-update Ultralytics Docs by https://ultralytics.com/actions"
+            git push
+          else
+            echo "No changes to commit"
+          fi
+
   HUB:
-    # if: github.repository == 'ultralytics/ultralytics' && (github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.hub == 'true'))
-    if: github.repository == 'ultralytics/ultralytics' && 'workflow_dispatch' && github.event.inputs.hub == 'true'
+    if: github.repository == 'ultralytics/ultralytics' && (github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.hub == 'true'))
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -52,15 +99,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: astral-sh/setup-uv@v4
+          cache: "pip" # caching pip dependencies
       - name: Install requirements
         shell: bash # for Windows compatibility
         run: |
-          uv pip install --system . --extra-index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --upgrade pip wheel
+          pip install -e . --extra-index-url https://download.pytorch.org/whl/cpu
       - name: Check environment
         run: |
           yolo checks
-          uv pip list
+          pip list
       - name: Test HUB training
         shell: python
         env:
@@ -98,56 +146,49 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-14]
+        os: [ubuntu-latest, macos-14]
         python-version: ["3.11"]
-        model: [yolo11n]
+        model: [yolov8n]
     steps:
-      - uses: astral-sh/setup-uv@v3
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: "pip" # caching pip dependencies
       - name: Install requirements
         shell: bash # for Windows compatibility
         run: |
-          uv pip install --system -e ".[export]" "coverage[toml]" --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-first-match
+          python -m pip install --upgrade pip wheel
+          pip install -e ".[export]" "coverage[toml]" --extra-index-url https://download.pytorch.org/whl/cpu
       - name: Check environment
         run: |
           yolo checks
-          uv pip list
-      - name: Benchmark DetectionModel
-        shell: bash
-        run: coverage run -a --source=ultralytics -m ultralytics.cfg.__init__ benchmark model='path with spaces/${{ matrix.model }}.pt' imgsz=160 verbose=0.309
+          pip list
       - name: Benchmark ClassificationModel
         shell: bash
-        run: coverage run -a --source=ultralytics -m ultralytics.cfg.__init__ benchmark model='path with spaces/${{ matrix.model }}-cls.pt' imgsz=160 verbose=0.249
+        run: coverage run -a --source=ultralytics -m ultralytics.cfg.__init__ benchmark model='path with spaces/${{ matrix.model }}-cls.pt' imgsz=160 verbose=0.166
       - name: Benchmark YOLOWorld DetectionModel
         shell: bash
-        run: coverage run -a --source=ultralytics -m ultralytics.cfg.__init__ benchmark model='path with spaces/yolov8s-worldv2.pt' imgsz=160 verbose=0.337
+        run: coverage run -a --source=ultralytics -m ultralytics.cfg.__init__ benchmark model='path with spaces/yolov8s-worldv2.pt' imgsz=160 verbose=0.318
       - name: Benchmark SegmentationModel
         shell: bash
-        run: coverage run -a --source=ultralytics -m ultralytics.cfg.__init__ benchmark model='path with spaces/${{ matrix.model }}-seg.pt' imgsz=160 verbose=0.195
+        run: coverage run -a --source=ultralytics -m ultralytics.cfg.__init__ benchmark model='path with spaces/${{ matrix.model }}-seg.pt' imgsz=160 verbose=0.279
       - name: Benchmark PoseModel
         shell: bash
-        run: coverage run -a --source=ultralytics -m ultralytics.cfg.__init__ benchmark model='path with spaces/${{ matrix.model }}-pose.pt' imgsz=160 verbose=0.197
+        run: coverage run -a --source=ultralytics -m ultralytics.cfg.__init__ benchmark model='path with spaces/${{ matrix.model }}-pose.pt' imgsz=160 verbose=0.183
       - name: Benchmark OBBModel
         shell: bash
-        run: coverage run -a --source=ultralytics -m ultralytics.cfg.__init__ benchmark model='path with spaces/${{ matrix.model }}-obb.pt' imgsz=160 verbose=0.597
-      - name: Benchmark YOLOv10Model
-        shell: bash
-        run: coverage run -a --source=ultralytics -m ultralytics.cfg.__init__ benchmark model='path with spaces/yolov10n.pt' imgsz=160 verbose=0.205
+        run: coverage run -a --source=ultralytics -m ultralytics.cfg.__init__ benchmark model='path with spaces/${{ matrix.model }}-obb.pt' imgsz=160 verbose=0.472
       - name: Merge Coverage Reports
         run: |
           coverage xml -o coverage-benchmarks.xml
       - name: Upload Coverage Reports to CodeCov
         if: github.repository == 'ultralytics/ultralytics'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v4
         with:
           flags: Benchmarks
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-      - name: Prune uv Cache
-        run: uv cache prune --ci
       - name: Benchmark Summary
         run: |
           cat benchmarks.log
@@ -160,7 +201,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-14]
         python-version: ["3.11"]
         torch: [latest]
         include:
@@ -172,24 +213,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: astral-sh/setup-uv@v4
+          cache: "pip" # caching pip dependencies
       - name: Install requirements
         shell: bash # for Windows compatibility
         run: |
           # CoreML must be installed before export due to protobuf error from AutoInstall
+          python -m pip install --upgrade pip wheel
           slow=""
           torch=""
           if [ "${{ matrix.torch }}" == "1.8.0" ]; then
               torch="torch==1.8.0 torchvision==0.9.0"
           fi
           if [[ "${{ github.event_name }}" =~ ^(schedule|workflow_dispatch)$ ]]; then
-              slow="pycocotools mlflow"
+              slow="pycocotools mlflow ray[tune]"
           fi
-          uv pip install --system -e ".[export]" $torch $slow pytest-cov --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[export]" $torch $slow pytest-cov --extra-index-url https://download.pytorch.org/whl/cpu
       - name: Check environment
         run: |
           yolo checks
-          uv pip list
+          pip list
       - name: Pytest tests
         shell: bash # for Windows compatibility
         run: |
@@ -200,13 +242,11 @@ jobs:
           pytest $slow --cov=ultralytics/ --cov-report xml tests/
       - name: Upload Coverage Reports to CodeCov
         if: github.repository == 'ultralytics/ultralytics' # && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v4
         with:
           flags: Tests
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-      - name: Prune uv Cache
-        run: uv cache prune --ci
 
   GPU:
     if: github.repository == 'ultralytics/ultralytics' && (github.event_name != 'workflow_dispatch' || github.event.inputs.gpu == 'true')
@@ -214,14 +254,12 @@ jobs:
     runs-on: gpu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
       - name: Install requirements
-        shell: bash # for Windows compatibility
-        run: uv pip install --system -e . pytest-cov
+        run: pip install -e .
       - name: Check environment
         run: |
           yolo checks
-          uv pip list
+          pip list
       - name: Pytest tests
         run: |
           slow=""
@@ -230,7 +268,7 @@ jobs:
           fi
           pytest $slow --cov=ultralytics/ --cov-report xml tests/test_cuda.py
       - name: Upload Coverage Reports to CodeCov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v4
         with:
           flags: GPU
         env:
@@ -250,7 +288,7 @@ jobs:
       - name: Install requirements
         run: |
           python -m pip install --upgrade pip wheel
-          pip install -e ".[export]" pytest mlflow pycocotools
+          pip install -e ".[export]" pytest mlflow pycocotools "ray[tune]"
       - name: Check environment
         run: |
           yolo checks
@@ -258,28 +296,24 @@ jobs:
       - name: Pytest tests
         run: pytest --slow tests/
       - name: Benchmark ClassificationModel
-        run: python -m ultralytics.cfg.__init__ benchmark model='yolo11n-cls.pt' imgsz=160 verbose=0.249
+        run: python -m ultralytics.cfg.__init__ benchmark model='yolov8n-cls.pt' imgsz=160 verbose=0.166
       - name: Benchmark YOLOWorld DetectionModel
-        run: python -m ultralytics.cfg.__init__ benchmark model='yolov8s-worldv2.pt' imgsz=160 verbose=0.337
+        run: python -m ultralytics.cfg.__init__ benchmark model='yolov8s-worldv2.pt' imgsz=160 verbose=0.318
       - name: Benchmark SegmentationModel
-        run: python -m ultralytics.cfg.__init__ benchmark model='yolo11n-seg.pt' imgsz=160 verbose=0.195
+        run: python -m ultralytics.cfg.__init__ benchmark model='yolov8n-seg.pt' imgsz=160 verbose=0.267
       - name: Benchmark PoseModel
-        run: python -m ultralytics.cfg.__init__ benchmark model='yolo11n-pose.pt' imgsz=160 verbose=0.197
+        run: python -m ultralytics.cfg.__init__ benchmark model='yolov8n-pose.pt' imgsz=160 verbose=0.179
       - name: Benchmark OBBModel
-        run: python -m ultralytics.cfg.__init__ benchmark model='yolo11n-obb.pt' imgsz=160 verbose=0.597
-      - name: Benchmark YOLOv10Model
-        run: python -m ultralytics.cfg.__init__ benchmark model='yolov10n.pt' imgsz=160 verbose=0.205
+        run: python -m ultralytics.cfg.__init__ benchmark model='yolov8n-obb.pt' imgsz=160 verbose=0.472
       - name: Benchmark Summary
         run: |
           cat benchmarks.log
           echo "$(cat benchmarks.log)" >> $GITHUB_STEP_SUMMARY
-      # The below is fixed in: https://github.com/ultralytics/ultralytics/pull/15987
-      # - name: Reboot # run a reboot command in the background to free resources for next run and not crash main thread
-      #   run: sudo bash -c "sleep 10; reboot" &
+      - name: Reboot # run a reboot command in the background to free resources for next run and not crash main thread
+        run: sudo bash -c "sleep 10; reboot" &
 
   Conda:
     if: github.repository == 'ultralytics/ultralytics' && (github.event_name == 'schedule' || github.event.inputs.conda == 'true')
-    continue-on-error: true
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -297,8 +331,6 @@ jobs:
           channels: conda-forge,defaults
           channel-priority: true
           activate-environment: anaconda-client-env
-      - name: Cleanup disk space
-        uses: ultralytics/actions/cleanup-disk@main
       - name: Install Linux packages
         run: |
           # Fix cv2 ImportError: 'libEGL.so.1: cannot open shared object file: No such file or directory'
@@ -319,17 +351,15 @@ jobs:
           conda list
       - name: Test CLI
         run: |
-          yolo predict model=yolo11n.pt imgsz=320
-          yolo train model=yolo11n.pt data=coco8.yaml epochs=1 imgsz=32
-          yolo val model=yolo11n.pt data=coco8.yaml imgsz=32
-          yolo export model=yolo11n.pt format=torchscript imgsz=160
-          yolo solutions
+          yolo predict model=yolov8n.pt imgsz=320
+          yolo train model=yolov8n.pt data=coco8.yaml epochs=1 imgsz=32
+          yolo val model=yolov8n.pt data=coco8.yaml imgsz=32
+          yolo export model=yolov8n.pt format=torchscript imgsz=160
       - name: Test Python
-        # Note this step must use the updated default bash environment, not a python environment
         run: |
           python -c "
           from ultralytics import YOLO
-          model = YOLO('yolo11n.pt')
+          model = YOLO('yolov8n.pt')
           results = model.train(data='coco8.yaml', epochs=3, imgsz=160)
           results = model.val(imgsz=160)
           results = model.predict(imgsz=160)
@@ -337,23 +367,19 @@ jobs:
           "
       - name: PyTest
         run: |
-          VERSION=$(conda list ultralytics | grep ultralytics | awk '{print $2}')
-          echo "Ultralytics version: $VERSION"
-          git clone https://github.com/ultralytics/ultralytics.git
-          cd ultralytics
-          git checkout tags/v$VERSION
-          pytest tests
+          git clone https://github.com/ultralytics/ultralytics
+          pytest ultralytics/tests
 
   Summary:
     runs-on: ubuntu-latest
-    needs: [HUB, Benchmarks, Tests, GPU, RaspberryPi, Conda]
-    if: always()
+    needs: [HUB, Benchmarks, Tests, GPU, RaspberryPi, Conda] # Add job names that you want to check for failure
+    if: always() # This ensures the job runs even if previous jobs fail
     steps:
       - name: Check for failure and notify
-        if: (needs.HUB.result == 'failure' || needs.Benchmarks.result == 'failure' || needs.Tests.result == 'failure' || needs.GPU.result == 'failure' || needs.RaspberryPi.result == 'failure' || needs.Conda.result == 'failure' ) && github.repository == 'ultralytics/ultralytics' && (github.event_name == 'schedule' || github.event_name == 'push') && github.run_attempt == '1'
-        uses: slackapi/slack-github-action@v2.0.0
+        if: (needs.HUB.result == 'failure' || needs.Benchmarks.result == 'failure' || needs.Tests.result == 'failure' || needs.GPU.result == 'failure' || needs.RaspberryPi.result == 'failure' || needs.Conda.result == 'failure' ) && github.repository == 'ultralytics/ultralytics' && (github.event_name == 'schedule' || github.event_name == 'push')
+        uses: slackapi/slack-github-action@v1.26.0
         with:
-          webhook-type: incoming-webhook
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL_YOLO }}
           payload: |
-            text: "<!channel> GitHub Actions error for ${{ github.workflow }} ❌\n\n\n*Repository:* https://github.com/${{ github.repository }}\n*Action:* https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\n*Author:* ${{ github.actor }}\n*Event:* ${{ github.event_name }}\n"
+            {"text": "<!channel> GitHub Actions error for ${{ github.workflow }} ❌\n\n\n*Repository:* https://github.com/${{ github.repository }}\n*Action:* https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\n*Author:* ${{ github.actor }}\n*Event:* ${{ github.event_name }}\n"}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_YOLO }}

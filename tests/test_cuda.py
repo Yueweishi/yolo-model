@@ -10,20 +10,12 @@ from tests import CUDA_DEVICE_COUNT, CUDA_IS_AVAILABLE, MODEL, SOURCE
 from ultralytics import YOLO
 from ultralytics.cfg import TASK2DATA, TASK2MODEL, TASKS
 from ultralytics.utils import ASSETS, WEIGHTS_DIR
-from ultralytics.utils.checks import check_amp
 
 
 def test_checks():
     """Validate CUDA settings against torch CUDA functions."""
     assert torch.cuda.is_available() == CUDA_IS_AVAILABLE
     assert torch.cuda.device_count() == CUDA_DEVICE_COUNT
-
-
-@pytest.mark.skipif(not CUDA_IS_AVAILABLE, reason="CUDA is not available")
-def test_amp():
-    """Test AMP training checks."""
-    model = YOLO("yolo11n.pt").model.cuda()
-    assert check_amp(model)
 
 
 @pytest.mark.slow
@@ -40,7 +32,7 @@ def test_amp():
     ],
 )
 def test_export_engine_matrix(task, dynamic, int8, half, batch):
-    """Test YOLO model export to TensorRT format for various configurations and run inference."""
+    """Test YOLO exports to TensorRT format."""
     file = YOLO(TASK2MODEL[task]).export(
         format="engine",
         imgsz=32,
@@ -59,7 +51,7 @@ def test_export_engine_matrix(task, dynamic, int8, half, batch):
 
 @pytest.mark.skipif(not CUDA_IS_AVAILABLE, reason="CUDA is not available")
 def test_train():
-    """Test model training on a minimal dataset using available CUDA devices."""
+    """Test model training on a minimal dataset."""
     device = 0 if CUDA_DEVICE_COUNT == 1 else [0, 1]
     YOLO(MODEL).train(data="coco8.yaml", imgsz=64, epochs=1, device=device)  # requires imgsz>=64
 
@@ -67,8 +59,8 @@ def test_train():
 @pytest.mark.slow
 @pytest.mark.skipif(not CUDA_IS_AVAILABLE, reason="CUDA is not available")
 def test_predict_multiple_devices():
-    """Validate model prediction consistency across CPU and CUDA devices."""
-    model = YOLO("yolo11n.pt")
+    """Validate model prediction on multiple devices."""
+    model = YOLO("yolov8n.pt")
     model = model.cpu()
     assert str(model.device) == "cpu"
     _ = model(SOURCE)  # CPU inference
@@ -92,7 +84,7 @@ def test_predict_multiple_devices():
 
 @pytest.mark.skipif(not CUDA_IS_AVAILABLE, reason="CUDA is not available")
 def test_autobatch():
-    """Check optimal batch size for YOLO model training using autobatch utility."""
+    """Check batch size for YOLO model using autobatch."""
     from ultralytics.utils.autobatch import check_train_batch_size
 
     check_train_batch_size(YOLO(MODEL).model.cuda(), imgsz=128, amp=True)
@@ -111,12 +103,12 @@ def test_utils_benchmarks():
 
 @pytest.mark.skipif(not CUDA_IS_AVAILABLE, reason="CUDA is not available")
 def test_predict_sam():
-    """Test SAM model predictions using different prompts, including bounding boxes and point annotations."""
+    """Test SAM model prediction with various prompts."""
     from ultralytics import SAM
     from ultralytics.models.sam import Predictor as SAMPredictor
 
     # Load a model
-    model = SAM(WEIGHTS_DIR / "sam2.1_b.pt")
+    model = SAM(WEIGHTS_DIR / "sam_b.pt")
 
     # Display model information (optional)
     model.info()
@@ -127,20 +119,8 @@ def test_predict_sam():
     # Run inference with bboxes prompt
     model(SOURCE, bboxes=[439, 437, 524, 709], device=0)
 
-    # Run inference with no labels
-    model(ASSETS / "zidane.jpg", points=[900, 370], device=0)
-
-    # Run inference with 1D points and 1D labels
+    # Run inference with points prompt
     model(ASSETS / "zidane.jpg", points=[900, 370], labels=[1], device=0)
-
-    # Run inference with 2D points and 1D labels
-    model(ASSETS / "zidane.jpg", points=[[900, 370]], labels=[1], device=0)
-
-    # Run inference with multiple 2D points and 1D labels
-    model(ASSETS / "zidane.jpg", points=[[400, 370], [900, 370]], labels=[1, 1], device=0)
-
-    # Run inference with 3D points and 2D labels (multiple points per object)
-    model(ASSETS / "zidane.jpg", points=[[[900, 370], [1000, 100]]], labels=[[1, 1]], device=0)
 
     # Create SAMPredictor
     overrides = dict(conf=0.25, task="segment", mode="predict", imgsz=1024, model=WEIGHTS_DIR / "mobile_sam.pt")

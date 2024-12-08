@@ -11,37 +11,30 @@ Example:
 
     x = torch.ones(1, 128, 40, 40)
     m = Conv(128, 128)
-    f = f"{m._get_name()}.onnx"
+    f = f'{m._get_name()}.onnx'
     torch.onnx.export(m, x, f)
-    os.system(f"onnxslim {f} {f} && open {f}")  # pip install onnxslim
+    os.system(f'onnxslim {f} {f} && open {f}')  # pip install onnxslim
     ```
 """
 
 from .block import (
     C1,
     C2,
-    C2PSA,
     C3,
     C3TR,
-    CIB,
     DFL,
     ELAN1,
-    PSA,
     SPP,
     SPPELAN,
     SPPF,
     AConv,
     ADown,
-    Attention,
     BNContrastiveHead,
     Bottleneck,
     BottleneckCSP,
     C2f,
     C2fAttn,
-    C2fCIB,
-    C2fPSA,
     C3Ghost,
-    C3k2,
     C3x,
     CBFuse,
     CBLinear,
@@ -53,9 +46,7 @@ from .block import (
     Proto,
     RepC3,
     RepNCSPELAN4,
-    RepVGGDW,
     ResNetLayer,
-    SCDown,
 )
 from .conv import (
     CBAM,
@@ -72,7 +63,7 @@ from .conv import (
     RepConv,
     SpatialAttention,
 )
-from .head import OBB, Classify, Detect, Pose, RTDETRDecoder, Segment, WorldDetect, v10Detect
+from .head import OBB, Classify, Detect, Pose, RTDETRDecoder, Segment, WorldDetect
 from .transformer import (
     AIFI,
     MLP,
@@ -113,10 +104,6 @@ __all__ = (
     "C2",
     "C3",
     "C2f",
-    "C3k2",
-    "SCDown",
-    "C2fPSA",
-    "C2PSA",
     "C2fAttn",
     "C3x",
     "C3TR",
@@ -140,7 +127,6 @@ __all__ = (
     "ResNetLayer",
     "OBB",
     "WorldDetect",
-    "v10Detect",
     "ImagePoolingAttn",
     "ContrastiveHead",
     "BNContrastiveHead",
@@ -151,9 +137,4 @@ __all__ = (
     "CBLinear",
     "AConv",
     "ELAN1",
-    "RepVGGDW",
-    "CIB",
-    "C2fCIB",
-    "Attention",
-    "PSA",
 )

@@ -5,39 +5,39 @@ keywords: Ultralytics, Data Builders, InfiniteDataLoader, YOLO dataset, build.py
 
 # Reference for `ultralytics/data/build.py`
 
-!!! note
+!!! Note
 
     This file is available at [https://github.com/ultralytics/ultralytics/blob/main/ultralytics/data/build.py](https://github.com/ultralytics/ultralytics/blob/main/ultralytics/data/build.py). If you spot a problem please help fix it by [contributing](https://docs.ultralytics.com/help/contributing/) a [Pull Request](https://github.com/ultralytics/ultralytics/edit/main/ultralytics/data/build.py) 🛠️. Thank you 🙏!
 
-<br>
+<br><br>
 
 ## ::: ultralytics.data.build.InfiniteDataLoader
 
-<br><br><hr><br>
+<br><br>
 
 ## ::: ultralytics.data.build._RepeatSampler
 
-<br><br><hr><br>
+<br><br>
 
 ## ::: ultralytics.data.build.seed_worker
 
-<br><br><hr><br>
+<br><br>
 
 ## ::: ultralytics.data.build.build_yolo_dataset
 
-<br><br><hr><br>
+<br><br>
 
 ## ::: ultralytics.data.build.build_grounding
 
-<br><br><hr><br>
+<br><br>
 
 ## ::: ultralytics.data.build.build_dataloader
 
-<br><br><hr><br>
+<br><br>
 
 ## ::: ultralytics.data.build.check_source
 
-<br><br><hr><br>
+<br><br>
 
 ## ::: ultralytics.data.build.load_inference_source
 

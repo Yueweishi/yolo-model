@@ -1,7 +1,6 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 
 import contextlib
-import csv
 import urllib
 from copy import copy
 from pathlib import Path
@@ -13,7 +12,7 @@ import torch
 import yaml
 from PIL import Image
 
-from tests import CFG, MODEL, SOURCE, SOURCES_LIST, TMP
+from tests import CFG, IS_TMP_WRITEABLE, MODEL, SOURCE, TMP
 from ultralytics import RTDETR, YOLO
 from ultralytics.cfg import MODELS, TASK2DATA, TASKS
 from ultralytics.data.build import load_inference_source
@@ -27,13 +26,9 @@ from ultralytics.utils import (
     WEIGHTS_DIR,
     WINDOWS,
     checks,
-    is_dir_writeable,
-    is_github_action_running,
 )
 from ultralytics.utils.downloads import download
 from ultralytics.utils.torch_utils import TORCH_1_9
-
-IS_TMP_WRITEABLE = is_dir_writeable(TMP)  # WARNING: must be run once tests start as TMP does not exist on tests/init
 
 
 def test_model_forward():
@@ -43,7 +38,7 @@ def test_model_forward():
 
 
 def test_model_methods():
-    """Test various methods and properties of the YOLO model to ensure correct functionality."""
+    """Test various methods and properties of the YOLO model."""
     model = YOLO(MODEL)
 
     # Model methods
@@ -63,7 +58,7 @@ def test_model_methods():
 
 
 def test_model_profile():
-    """Test profiling of the YOLO model with `profile=True` to assess performance and resource usage."""
+    """Test profiling of the YOLO model with 'profile=True' argument."""
     from ultralytics.nn.tasks import DetectionModel
 
     model = DetectionModel()  # build model
@@ -73,43 +68,17 @@ def test_model_profile():
 
 @pytest.mark.skipif(not IS_TMP_WRITEABLE, reason="directory is not writeable")
 def test_predict_txt():
-    """Tests YOLO predictions with file, directory, and pattern sources listed in a text file."""
-    file = TMP / "sources_multi_row.txt"
-    with open(file, "w") as f:
-        for src in SOURCES_LIST:
-            f.write(f"{src}\n")
-    results = YOLO(MODEL)(source=file, imgsz=32)
-    assert len(results) == 7  # 1 + 2 + 2 + 2 = 7 images
-
-
-@pytest.mark.skipif(True, reason="disabled for testing")
-@pytest.mark.skipif(not IS_TMP_WRITEABLE, reason="directory is not writeable")
-def test_predict_csv_multi_row():
-    """Tests YOLO predictions with sources listed in multiple rows of a CSV file."""
-    file = TMP / "sources_multi_row.csv"
-    with open(file, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["source"])
-        writer.writerows([[src] for src in SOURCES_LIST])
-    results = YOLO(MODEL)(source=file, imgsz=32)
-    assert len(results) == 7  # 1 + 2 + 2 + 2 = 7 images
-
-
-@pytest.mark.skipif(True, reason="disabled for testing")
-@pytest.mark.skipif(not IS_TMP_WRITEABLE, reason="directory is not writeable")
-def test_predict_csv_single_row():
-    """Tests YOLO predictions with sources listed in a single row of a CSV file."""
-    file = TMP / "sources_single_row.csv"
-    with open(file, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(SOURCES_LIST)
-    results = YOLO(MODEL)(source=file, imgsz=32)
-    assert len(results) == 7  # 1 + 2 + 2 + 2 = 7 images
+    """Test YOLO predictions with sources (file, dir, glob, recursive glob) specified in a text file."""
+    txt_file = TMP / "sources.txt"
+    with open(txt_file, "w") as f:
+        for x in [ASSETS / "bus.jpg", ASSETS, ASSETS / "*", ASSETS / "**/*.jpg"]:
+            f.write(f"{x}\n")
+    _ = YOLO(MODEL)(source=txt_file, imgsz=32)
 
 
 @pytest.mark.parametrize("model_name", MODELS)
 def test_predict_img(model_name):
-    """Test YOLO model predictions on various image input types and sources, including online images."""
+    """Test YOLO prediction on various types of image sources."""
     model = YOLO(WEIGHTS_DIR / model_name)
     im = cv2.imread(str(SOURCE))  # uint8 numpy array
     assert len(model(source=Image.open(SOURCE), save=True, verbose=True, imgsz=32)) == 1  # PIL
@@ -121,7 +90,7 @@ def test_predict_img(model_name):
     batch = [
         str(SOURCE),  # filename
         Path(SOURCE),  # Path
-        "https://github.com/ultralytics/assets/releases/download/v0.0.0/zidane.jpg" if ONLINE else SOURCE,  # URI
+        "https://ultralytics.com/images/zidane.jpg" if ONLINE else SOURCE,  # URI
         cv2.imread(str(SOURCE)),  # OpenCV
         Image.open(SOURCE),  # PIL
         np.zeros((320, 640, 3), dtype=np.uint8),  # numpy
@@ -131,12 +100,12 @@ def test_predict_img(model_name):
 
 @pytest.mark.parametrize("model", MODELS)
 def test_predict_visualize(model):
-    """Test model prediction methods with 'visualize=True' to generate and display prediction visualizations."""
+    """Test model predict methods with 'visualize=True' arguments."""
     YOLO(WEIGHTS_DIR / model)(SOURCE, imgsz=32, visualize=True)
 
 
 def test_predict_grey_and_4ch():
-    """Test YOLO prediction on SOURCE converted to greyscale and 4-channel images with various filenames."""
+    """Test YOLO prediction on SOURCE converted to greyscale and 4-channel images."""
     im = Image.open(SOURCE)
     directory = TMP / "im4"
     directory.mkdir(parents=True, exist_ok=True)
@@ -162,9 +131,12 @@ def test_predict_grey_and_4ch():
 
 @pytest.mark.slow
 @pytest.mark.skipif(not ONLINE, reason="environment is offline")
-@pytest.mark.skipif(is_github_action_running(), reason="No auth https://github.com/JuanBindez/pytubefix/issues/166")
 def test_youtube():
-    """Test YOLO model on a YouTube video stream, handling potential network-related errors."""
+    """
+    Test YouTube inference.
+
+    Note: ConnectionError may occur during this test due to network instability or YouTube server availability.
+    """
     model = YOLO(MODEL)
     try:
         model.predict("https://youtu.be/G17sBkb38XQ", imgsz=96, save=True)
@@ -177,11 +149,11 @@ def test_youtube():
 @pytest.mark.skipif(not IS_TMP_WRITEABLE, reason="directory is not writeable")
 def test_track_stream():
     """
-    Tests streaming tracking on a short 10 frame video using ByteTrack tracker and different GMC methods.
+    Test streaming tracking (short 10 frame video) with non-default ByteTrack tracker.
 
-    Note imgsz=160 required for tracking for higher confidence and better matches.
+    Note imgsz=160 required for tracking for higher confidence and better matches
     """
-    video_url = "https://github.com/ultralytics/assets/releases/download/v0.0.0/decelera_portrait_min.mov"
+    video_url = "https://ultralytics.com/assets/decelera_portrait_min.mov"
     model = YOLO(MODEL)
     model.track(video_url, imgsz=160, tracker="bytetrack.yaml")
     model.track(video_url, imgsz=160, tracker="botsort.yaml", save_frames=True)  # test frame saving also
@@ -203,21 +175,21 @@ def test_val():
 
 
 def test_train_scratch():
-    """Test training the YOLO model from scratch using the provided configuration."""
+    """Test training the YOLO model from scratch."""
     model = YOLO(CFG)
     model.train(data="coco8.yaml", epochs=2, imgsz=32, cache="disk", batch=-1, close_mosaic=1, name="model")
     model(SOURCE)
 
 
 def test_train_pretrained():
-    """Test training of the YOLO model starting from a pre-trained checkpoint."""
-    model = YOLO(WEIGHTS_DIR / "yolo11n-seg.pt")
+    """Test training the YOLO model from a pre-trained state."""
+    model = YOLO(WEIGHTS_DIR / "yolov8n-seg.pt")
     model.train(data="coco8-seg.yaml", epochs=1, imgsz=32, cache="ram", copy_paste=0.5, mixup=0.5, name=0)
     model(SOURCE)
 
 
 def test_all_model_yamls():
-    """Test YOLO model creation for all available YAML configurations in the `cfg/models` directory."""
+    """Test YOLO model creation for all available YAML configurations."""
     for m in (ROOT / "cfg" / "models").rglob("*.yaml"):
         if "rtdetr" in m.name:
             if TORCH_1_9:  # torch<=1.8 issue - TypeError: __init__() got an unexpected keyword argument 'batch_first'
@@ -226,18 +198,17 @@ def test_all_model_yamls():
             YOLO(m.name)
 
 
-@pytest.mark.skipif(WINDOWS, reason="Windows slow CI export bug https://github.com/ultralytics/ultralytics/pull/16003")
 def test_workflow():
     """Test the complete workflow including training, validation, prediction, and exporting."""
     model = YOLO(MODEL)
     model.train(data="coco8.yaml", epochs=1, imgsz=32, optimizer="SGD")
     model.val(imgsz=32)
     model.predict(SOURCE, imgsz=32)
-    model.export(format="torchscript")  # WARNING: Windows slow CI export bug
+    model.export(format="torchscript")
 
 
 def test_predict_callback_and_setup():
-    """Test callback functionality during YOLO prediction setup and execution."""
+    """Test callback functionality during YOLO prediction."""
 
     def on_predict_batch_end(predictor):
         """Callback function that handles operations at the end of a prediction batch."""
@@ -261,33 +232,27 @@ def test_predict_callback_and_setup():
 
 @pytest.mark.parametrize("model", MODELS)
 def test_results(model):
-    """Ensure YOLO model predictions can be processed and printed in various formats."""
+    """Test various result formats for the YOLO model."""
     results = YOLO(WEIGHTS_DIR / model)([SOURCE, SOURCE], imgsz=160)
     for r in results:
         r = r.cpu().numpy()
-        print(r, len(r), r.path)  # print numpy attributes
         r = r.to(device="cpu", dtype=torch.float32)
         r.save_txt(txt_file=TMP / "runs/tests/label.txt", save_conf=True)
         r.save_crop(save_dir=TMP / "runs/tests/crops/")
-        r.to_json(normalize=True)
-        r.to_df(decimals=3)
-        r.to_csv()
-        r.to_xml()
+        r.tojson(normalize=True)
         r.plot(pil=True)
         r.plot(conf=True, boxes=True)
-        print(r, len(r), r.path)  # print after methods
+        print(r, len(r), r.path)
 
 
 def test_labels_and_crops():
-    """Test output from prediction args for saving YOLO detection labels and crops; ensures accurate saving."""
+    """Test output from prediction args for saving detection labels and crops."""
     imgs = [SOURCE, ASSETS / "zidane.jpg"]
-    results = YOLO(WEIGHTS_DIR / "yolo11n.pt")(imgs, imgsz=160, save_txt=True, save_crop=True)
+    results = YOLO(WEIGHTS_DIR / "yolov8n.pt")(imgs, imgsz=160, save_txt=True, save_crop=True)
     save_path = Path(results[0].save_dir)
     for r in results:
         im_name = Path(r.path).stem
         cls_idxs = r.boxes.cls.int().tolist()
-        # Check correct detections
-        assert cls_idxs == ([0, 7, 0, 0] if r.path.endswith("bus.jpg") else [0, 0, 0])  # bus.jpg and zidane.jpg classes
         # Check label path
         labels = save_path / f"labels/{im_name}.txt"
         assert labels.exists()
@@ -304,7 +269,7 @@ def test_labels_and_crops():
 
 @pytest.mark.skipif(not ONLINE, reason="environment is offline")
 def test_data_utils():
-    """Test utility functions in ultralytics/data/utils.py, including dataset stats and auto-splitting."""
+    """Test utility functions in ultralytics/data/utils.py."""
     from ultralytics.data.utils import HUBDatasetStats, autosplit
     from ultralytics.utils.downloads import zip_directory
 
@@ -324,22 +289,22 @@ def test_data_utils():
 
 @pytest.mark.skipif(not ONLINE, reason="environment is offline")
 def test_data_converter():
-    """Test dataset conversion functions from COCO to YOLO format and class mappings."""
+    """Test dataset converters."""
     from ultralytics.data.converter import coco80_to_coco91_class, convert_coco
 
     file = "instances_val2017.json"
-    download(f"https://github.com/ultralytics/assets/releases/download/v0.0.0/{file}", dir=TMP)
+    download(f"https://github.com/ultralytics/yolov5/releases/download/v1.0/{file}", dir=TMP)
     convert_coco(labels_dir=TMP, save_dir=TMP / "yolo_labels", use_segments=True, use_keypoints=False, cls91to80=True)
     coco80_to_coco91_class()
 
 
 def test_data_annotator():
-    """Automatically annotate data using specified detection and segmentation models."""
+    """Test automatic data annotation."""
     from ultralytics.data.annotator import auto_annotate
 
     auto_annotate(
         ASSETS,
-        det_model=WEIGHTS_DIR / "yolo11n.pt",
+        det_model=WEIGHTS_DIR / "yolov8n.pt",
         sam_model=WEIGHTS_DIR / "mobile_sam.pt",
         output_dir=TMP / "auto_annotate_labels",
     )
@@ -357,7 +322,7 @@ def test_events():
 
 
 def test_cfg_init():
-    """Test configuration initialization utilities from the 'ultralytics.cfg' module."""
+    """Test configuration initialization utilities."""
     from ultralytics.cfg import check_dict_alignment, copy_default_cfg, smart_value
 
     with contextlib.suppress(SyntaxError):
@@ -368,7 +333,7 @@ def test_cfg_init():
 
 
 def test_utils_init():
-    """Test initialization utilities in the Ultralytics library."""
+    """Test initialization utilities."""
     from ultralytics.utils import get_git_branch, get_git_origin_url, get_ubuntu_version, is_github_action_running
 
     get_ubuntu_version()
@@ -378,7 +343,7 @@ def test_utils_init():
 
 
 def test_utils_checks():
-    """Test various utility checks for filenames, git status, requirements, image sizes, and versions."""
+    """Test various utility checks."""
     checks.check_yolov5u_filename("yolov5n.pt")
     checks.git_describe(ROOT)
     checks.check_requirements()  # check requirements.txt
@@ -390,14 +355,14 @@ def test_utils_checks():
 
 @pytest.mark.skipif(WINDOWS, reason="Windows profiling is extremely slow (cause unknown)")
 def test_utils_benchmarks():
-    """Benchmark model performance using 'ProfileModels' from 'ultralytics.utils.benchmarks'."""
+    """Test model benchmarking."""
     from ultralytics.utils.benchmarks import ProfileModels
 
-    ProfileModels(["yolo11n.yaml"], imgsz=32, min_time=1, num_timed_runs=3, num_warmup_runs=1).profile()
+    ProfileModels(["yolov8n.yaml"], imgsz=32, min_time=1, num_timed_runs=3, num_warmup_runs=1).profile()
 
 
 def test_utils_torchutils():
-    """Test Torch utility functions including profiling and FLOP calculations."""
+    """Test Torch utility functions."""
     from ultralytics.nn.modules.conv import Conv
     from ultralytics.utils.torch_utils import get_flops_with_torch_profiler, profile, time_sync
 
@@ -412,14 +377,14 @@ def test_utils_torchutils():
 @pytest.mark.slow
 @pytest.mark.skipif(not ONLINE, reason="environment is offline")
 def test_utils_downloads():
-    """Test file download utilities from ultralytics.utils.downloads."""
+    """Test file download utilities."""
     from ultralytics.utils.downloads import get_google_drive_file_info
 
     get_google_drive_file_info("https://drive.google.com/file/d/1cqT-cJgANNrhIHCrEufUYhQ4RqiWG_lJ/view?usp=drive_link")
 
 
 def test_utils_ops():
-    """Test utility operations functions for coordinate transformation and normalization."""
+    """Test various operations utilities."""
     from ultralytics.utils.ops import (
         ltwh2xywh,
         ltwh2xyxy,
@@ -448,7 +413,7 @@ def test_utils_ops():
 
 
 def test_utils_files():
-    """Test file handling utilities including file age, date, and paths with spaces."""
+    """Test file handling utilities."""
     from ultralytics.utils.files import file_age, file_date, get_latest_run, spaces_in_path
 
     file_age(SOURCE)
@@ -463,7 +428,7 @@ def test_utils_files():
 
 @pytest.mark.slow
 def test_utils_patches_torch_save():
-    """Test torch_save backoff when _torch_save raises RuntimeError to ensure robustness."""
+    """Test torch_save backoff when _torch_save throws RuntimeError."""
     from unittest.mock import MagicMock, patch
 
     from ultralytics.utils.patches import torch_save
@@ -478,7 +443,7 @@ def test_utils_patches_torch_save():
 
 
 def test_nn_modules_conv():
-    """Test Convolutional Neural Network modules including CBAM, Conv2, and ConvTranspose."""
+    """Test Convolutional Neural Network modules."""
     from ultralytics.nn.modules.conv import CBAM, Conv2, ConvTranspose, DWConvTranspose2d, Focus
 
     c1, c2 = 8, 16  # input and output channels
@@ -497,7 +462,7 @@ def test_nn_modules_conv():
 
 
 def test_nn_modules_block():
-    """Test various blocks in neural network modules including C1, C3TR, BottleneckCSP, C3Ghost, and C3x."""
+    """Test Neural Network block modules."""
     from ultralytics.nn.modules.block import C1, C3TR, BottleneckCSP, C3Ghost, C3x
 
     c1, c2 = 8, 16  # input and output channels
@@ -513,7 +478,7 @@ def test_nn_modules_block():
 
 @pytest.mark.skipif(not ONLINE, reason="environment is offline")
 def test_hub():
-    """Test Ultralytics HUB functionalities (e.g. export formats, logout)."""
+    """Test Ultralytics HUB functionalities."""
     from ultralytics.hub import export_fmts_hub, logout
     from ultralytics.hub.utils import smart_request
 
@@ -524,7 +489,7 @@ def test_hub():
 
 @pytest.fixture
 def image():
-    """Load and return an image from a predefined source using OpenCV."""
+    """Loads an image from a predefined source using OpenCV."""
     return cv2.imread(str(SOURCE))
 
 
@@ -538,7 +503,7 @@ def image():
     ],
 )
 def test_classify_transforms_train(image, auto_augment, erasing, force_color_jitter):
-    """Tests classification transforms during training with various augmentations to ensure proper functionality."""
+    """Tests classification transforms during training with various augmentation settings."""
     from ultralytics.data.augment import classify_augmentations
 
     transform = classify_augmentations(
@@ -567,15 +532,15 @@ def test_classify_transforms_train(image, auto_augment, erasing, force_color_jit
 @pytest.mark.slow
 @pytest.mark.skipif(not ONLINE, reason="environment is offline")
 def test_model_tune():
-    """Tune YOLO model for performance improvement."""
-    YOLO("yolo11n-pose.pt").tune(data="coco8-pose.yaml", plots=False, imgsz=32, epochs=1, iterations=2, device="cpu")
-    YOLO("yolo11n-cls.pt").tune(data="imagenet10", plots=False, imgsz=32, epochs=1, iterations=2, device="cpu")
+    """Tune YOLO model for performance."""
+    YOLO("yolov8n-pose.pt").tune(data="coco8-pose.yaml", plots=False, imgsz=32, epochs=1, iterations=2, device="cpu")
+    YOLO("yolov8n-cls.pt").tune(data="imagenet10", plots=False, imgsz=32, epochs=1, iterations=2, device="cpu")
 
 
 def test_model_embeddings():
     """Test YOLO model embeddings."""
     model_detect = YOLO(MODEL)
-    model_segment = YOLO(WEIGHTS_DIR / "yolo11n-seg.pt")
+    model_segment = YOLO(WEIGHTS_DIR / "yolov8n-seg.pt")
 
     for batch in [SOURCE], [SOURCE, SOURCE]:  # test batch size 1 and 2
         assert len(model_detect.embed(source=batch, imgsz=32)) == len(batch)
@@ -584,12 +549,12 @@ def test_model_embeddings():
 
 @pytest.mark.skipif(checks.IS_PYTHON_3_12, reason="YOLOWorld with CLIP is not supported in Python 3.12")
 def test_yolo_world():
-    """Tests YOLO world models with CLIP support, including detection and training scenarios."""
-    model = YOLO("yolov8s-world.pt")  # no YOLO11n-world model yet
+    """Tests YOLO world models with different configurations, including classes, detection, and training scenarios."""
+    model = YOLO("yolov8s-world.pt")  # no YOLOv8n-world model yet
     model.set_classes(["tree", "window"])
     model(SOURCE, conf=0.01)
 
-    model = YOLO("yolov8s-worldv2.pt")  # no YOLO11n-world model yet
+    model = YOLO("yolov8s-worldv2.pt")  # no YOLOv8n-world model yet
     # Training from a pretrained model. Eval is included at the final stage of training.
     # Use dota8.yaml which has fewer categories to reduce the inference time of CLIP model
     model.train(
@@ -603,7 +568,7 @@ def test_yolo_world():
     # test WorWorldTrainerFromScratch
     from ultralytics.models.yolo.world.train_world import WorldTrainerFromScratch
 
-    model = YOLO("yolov8s-worldv2.yaml")  # no YOLO11n-world model yet
+    model = YOLO("yolov8s-worldv2.yaml")  # no YOLOv8n-world model yet
     model.train(
         data={"train": {"yolo_data": ["dota8.yaml"]}, "val": {"yolo_data": ["dota8.yaml"]}},
         epochs=1,
@@ -612,13 +577,3 @@ def test_yolo_world():
         close_mosaic=1,
         trainer=WorldTrainerFromScratch,
     )
-
-
-def test_yolov10():
-    """Test YOLOv10 model training, validation, and prediction steps with minimal configurations."""
-    model = YOLO("yolov10n.yaml")
-    # train/val/predict
-    model.train(data="coco8.yaml", epochs=1, imgsz=32, close_mosaic=1, cache="disk")
-    model.val(data="coco8.yaml", imgsz=32)
-    model.predict(imgsz=32, save_txt=True, save_crop=True, augment=True)
-    model(SOURCE)
